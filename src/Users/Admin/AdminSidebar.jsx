@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -8,6 +9,12 @@ import {
   LifeBuoy,
   UserCircle2,
   CheckCircle2,
+  Wallet,
+  CalendarDays,
+  PiggyBank,
+  FolderKanban,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 
 const primaryNav = [
@@ -46,7 +53,34 @@ const primaryNav = [
     to: "/admin/branch",
     icon: Users,
   },
+  {
+    label: "Group Leaders",
+    to: "/admin/groupleaders",
+    icon: Users,
+  },
+  {
+    label: "Admin Panels",
+    to: "/admin/admins",
+    icon: Users,
+  },
+];
 
+const operationsNav = [
+  {
+    label: "Expenses",
+    to: "/admin/operations/expenses",
+    icon: Wallet,
+  },
+  {
+    label: "Holiday",
+    to: "/admin/operations/holiday",
+    icon: CalendarDays,
+  },
+  {
+    label: "Cash at Hand",
+    to: "/admin/operations/cash-at-hand",
+    icon: PiggyBank,
+  },
 ];
 
 const secondaryNav = [
@@ -95,6 +129,8 @@ function SidebarSection({ title, items, onNavigate }) {
 }
 
 export default function AdminSidebar({ isOpen = false, onClose }) {
+  const [operationsOpen, setOperationsOpen] = useState(false);
+
   return (
     <>
       <div
@@ -132,6 +168,48 @@ export default function AdminSidebar({ isOpen = false, onClose }) {
 
           <div className="scrollbar-thin flex-1 space-y-6 overflow-y-auto px-4 py-6">
             <SidebarSection title="Overview" items={primaryNav} onNavigate={onClose} />
+
+            <div className="space-y-1">
+             
+              <button
+                type="button"
+                onClick={() => setOperationsOpen((prev) => !prev)}
+                className="flex w-full items-center justify-between rounded-lg px-3  text-left text-sm font-semibold text-slate-600 transition hover:text-slate-900"
+              >
+                <span className="flex items-center gap-3">
+                  <FolderKanban className="h-5 w-5" />
+                  <span>Operations</span>
+                </span>
+                {operationsOpen ? (
+                  <ChevronDown className="h-4 w-4 text-slate-400" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 text-slate-400" />
+                )}
+              </button>
+
+              {operationsOpen && (
+                <nav className="ml-8 space-y-1">
+                  {operationsNav.map(({ label, to, icon: Icon }) => (
+                    <NavLink
+                      key={label}
+                      to={to}
+                      end
+                      className={({ isActive }) =>
+                        [
+                          "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                          isActive ? linkActiveClasses : linkInactiveClasses,
+                        ].join(" ")
+                      }
+                      onClick={onClose}
+                    >
+                      <Icon className="h-4 w-4" />
+                      <span>{label}</span>
+                    </NavLink>
+                  ))}
+                </nav>
+              )}
+            </div>
+
             <SidebarSection title="Workspace" items={secondaryNav} onNavigate={onClose} />
           </div>
 

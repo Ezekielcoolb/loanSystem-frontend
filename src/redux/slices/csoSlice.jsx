@@ -8,9 +8,11 @@ const extractErrorMessage = (error, fallback) => {
   return error.response?.data?.message || error.message || fallback;
 };
 
-export const fetchCsos = createAsyncThunk("cso/fetchAll", async (_, { rejectWithValue }) => {
+export const fetchCsos = createAsyncThunk("cso/fetchAll", async ({ page = 1, limit = 20, branchId = "" } = {}, { rejectWithValue }) => {
   try {
-    const response = await axios.get(`${API_BASE_URL}/api/csos`);
+    const response = await axios.get(`${API_BASE_URL}/api/csos`, {
+      params: { page, limit, branchId },
+    });
     return response.data;
   } catch (error) {
     return rejectWithValue(extractErrorMessage(error, "Failed to load CSOs"));
@@ -55,6 +57,18 @@ export const changeCsoStatus = createAsyncThunk(
       return response.data;
     } catch (error) {
       return rejectWithValue(extractErrorMessage(error, "Failed to update CSO status"));
+    }
+  }
+);
+
+export const transferCsoBranch = createAsyncThunk(
+  "cso/transferBranch",
+  async ({ id, branch, branchId }, { rejectWithValue }) => {
+    try {
+      const response = await axios.patch(`${API_BASE_URL}/api/csos/${id}/transfer-branch`, { branch, branchId });
+      return response.data;
+    } catch (error) {
+      return rejectWithValue(extractErrorMessage(error, "Failed to transfer CSO branch"));
     }
   }
 );
@@ -107,6 +121,12 @@ const csoSlice = createSlice({
     items: [],
     selected: null,
     profile: null,
+    pagination: {
+      page: 1,
+      limit: 20,
+      total: 0,
+      totalPages: 0,
+    },
     listLoading: false,
     detailLoading: false,
     profileLoading: false,
@@ -131,7 +151,8 @@ const csoSlice = createSlice({
       })
       .addCase(fetchCsos.fulfilled, (state, action) => {
         state.listLoading = false;
-        state.items = action.payload;
+        state.items = action.payload.data;
+        state.pagination = action.payload.pagination;
       })
       .addCase(fetchCsos.rejected, (state, action) => {
         state.listLoading = false;
@@ -188,6 +209,21 @@ const csoSlice = createSlice({
       .addCase(changeCsoStatus.rejected, (state, action) => {
         state.saving = false;
         state.error = action.payload || "Failed to update CSO status";
+      })
+      .addCase(transferCsoBranch.pending, (state) => {
+        state.saving = true;
+        state.error = null;
+      })
+      .addCase(transferCsoBranch.fulfilled, (state, action) => {
+        state.saving = false;
+        state.items = state.items.map((cso) => (cso._id === action.payload.cso._id ? action.payload.cso : cso));
+        if (state.selected?._id === action.payload.cso._id) {
+          state.selected = action.payload.cso;
+        }
+      })
+      .addCase(transferCsoBranch.rejected, (state, action) => {
+        state.saving = false;
+        state.error = action.payload || "Failed to transfer CSO branch";
       })
       .addCase(fetchCsoProfile.pending, (state) => {
         state.profileLoading = true;

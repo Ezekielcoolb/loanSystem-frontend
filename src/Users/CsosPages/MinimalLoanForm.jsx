@@ -7,6 +7,7 @@ import SignatureCanvas from "react-signature-canvas";
 
 import { clearLoanError, submitLoan } from "../../redux/slices/loanSlice";
 import { uploadImages } from "../../redux/slices/uploadSlice";
+import { fetchMyApprovedGroupLeaders } from "../../redux/slices/groupLeaderSlice";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
@@ -90,6 +91,14 @@ const createBlankPictures = () => ({
   business: "",
   disclosure: "",
   signature: "",
+});
+
+const createBlankGroupDetails = () => ({
+  groupId: "",
+  groupName: "",
+  leaderName: "",
+  address: "",
+  mobileNo: "",
 });
 
 const LOAN_TYPES = [
@@ -195,6 +204,7 @@ const buildInitialForm = (previousLoan) => {
   const guarantorTemplate = createBlankGuarantor();
   const loanTemplate = createBlankLoanDetails();
   const picturesTemplate = createBlankPictures();
+  const groupTemplate = createBlankGroupDetails();
 
   if (!previousLoan) {
     return {
@@ -204,6 +214,7 @@ const buildInitialForm = (previousLoan) => {
       guarantorDetails: guarantorTemplate,
       loanDetails: loanTemplate,
       pictures: picturesTemplate,
+      groupDetails: groupTemplate,
     };
   }
 
@@ -217,6 +228,7 @@ const buildInitialForm = (previousLoan) => {
       loanType: previousLoan?.loanDetails?.loanType || loanTemplate.loanType,
     },
     pictures: mapSection(picturesTemplate, previousLoan.pictures),
+    groupDetails: mapSection(groupTemplate, previousLoan.groupDetails || groupTemplate),
   };
 };
 
@@ -248,6 +260,8 @@ export default function MinimalLoanForm() {
 
   const { submitting, error } = useSelector((state) => state.loan);
   const { imageUploadLoading } = useSelector((state) => state.upload);
+  const groupLeaders = useSelector((state) => state.groupLeader.items);
+  const loadingGroupLeaders = useSelector((state) => state.groupLeader.loading);
 
   const [form, setForm] = useState(() => buildInitialForm(previousLoan));
   const [activeUploadTarget, setActiveUploadTarget] = useState(null);
@@ -274,6 +288,28 @@ export default function MinimalLoanForm() {
       setForm(buildInitialForm(previousLoan));
     }
   }, [previousLoan]);
+
+  // Fetch approved group leaders
+  useEffect(() => {
+    dispatch(fetchMyApprovedGroupLeaders());
+  }, [dispatch]);
+
+  // Handle group leader selection
+  const handleGroupLeaderChange = (selectedGroupId) => {
+    const selectedLeader = groupLeaders.find(gl => gl._id === selectedGroupId);
+    if (selectedLeader) {
+      setForm(prev => ({
+        ...prev,
+        groupDetails: {
+          groupId: selectedLeader._id,
+          groupName: selectedLeader.groupName,
+          leaderName: `${selectedLeader.firstName} ${selectedLeader.lastName}`,
+          address: selectedLeader.address,
+          mobileNo: selectedLeader.phone,
+        }
+      }));
+    }
+  };
 
   const customerName = useMemo(() => {
     const customer = previousLoan?.customerDetails || {};
@@ -496,6 +532,13 @@ export default function MinimalLoanForm() {
         yearsKnown,
         signature: form.guarantorDetails.signature.trim(),
       },
+      groupDetails: {
+        groupId: form.groupDetails.groupId || undefined,
+        groupName: form.groupDetails.groupName?.trim() || undefined,
+        leaderName: form.groupDetails.leaderName?.trim() || undefined,
+        address: form.groupDetails.address?.trim() || undefined,
+        mobileNo: form.groupDetails.mobileNo?.trim() || undefined,
+      },
       pictures: sanitizedPictures,
     };
 
@@ -608,6 +651,43 @@ export default function MinimalLoanForm() {
                   />
                 </label>
               ))}
+            </div>
+          </div>
+
+          {/* Group Leader Selection */}
+          <div className="space-y-4">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">Group Leader</h2>
+              <p className="text-sm text-slate-500">Select an approved group leader if applicable.</p>
+            </div>
+            <div className="space-y-2">
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                Select Group Leader (Optional)
+                <select
+                  value={form.groupDetails.groupId}
+                  onChange={(e) => handleGroupLeaderChange(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                >
+                  <option value="">Select a group leader...</option>
+                  {loadingGroupLeaders ? (
+                    <option disabled>Loading group leaders...</option>
+                  ) : (
+                    groupLeaders.map((leader) => (
+                      <option key={leader._id} value={leader._id}>
+                        {leader.groupName} - {leader.firstName} {leader.lastName}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </label>
+              {form.groupDetails.groupId && (
+                <div className="rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
+                  <p><strong>Group:</strong> {form.groupDetails.groupName}</p>
+                  <p><strong>Leader:</strong> {form.groupDetails.leaderName}</p>
+                  <p><strong>Phone:</strong> {form.groupDetails.mobileNo}</p>
+                  <p><strong>Address:</strong> {form.groupDetails.address}</p>
+                </div>
+              )}
             </div>
           </div>
 

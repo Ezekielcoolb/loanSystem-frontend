@@ -203,6 +203,16 @@ export default function NewLoanDetails() {
     ];
   }, [detail]);
 
+  const groupInfo = useMemo(() => {
+    const group = detail?.groupDetails || {};
+    return [
+      { label: "Group Name", value: group.groupName },
+      { label: "Leader Name", value: group.leaderName },
+      { label: "Leader Phone", value: group.mobileNo },
+      { label: "Leader Address", value: group.address },
+    ];
+  }, [detail]);
+
   const loanInfo = useMemo(() => {
     const loanDetails = detail?.loanDetails || {};
     return [
@@ -369,6 +379,7 @@ export default function NewLoanDetails() {
       <InfoSection title="Business details" items={businessInfo} />
       <InfoSection title="Bank details" items={bankInfo} />
       <InfoSection title="Guarantor details" items={guarantorInfo} />
+      <InfoSection title="Group details" items={groupInfo} />
       <InfoSection title="Loan details" items={loanInfo} />
 
       {previewItems.length > 0 && (

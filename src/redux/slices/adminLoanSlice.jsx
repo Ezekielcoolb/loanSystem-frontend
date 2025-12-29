@@ -123,6 +123,16 @@ const initialState = {
   customerSummaryPagination: { page: 1, limit: 10, total: 0, totalPages: 0 },
   customerSummaryLoading: false,
   customerSummaryError: null,
+  customerLoanHistory: [],
+  customerLoanHistoryLoading: false,
+  customerLoanHistoryError: null,
+  customerLoanHistoryCustomer: null,
+  customerDetailsRecord: null,
+  customerDetailsLoading: false,
+  customerDetailsError: null,
+  groupLeaders: [],
+  groupLeadersLoading: false,
+  groupLeadersError: null,
 };
 
 export const fetchLoansByCsoId = createAsyncThunk(
@@ -197,6 +207,87 @@ export const fetchCustomerSummary = createAsyncThunk(
   }
 );
 
+export const fetchCustomerLoansByBvn = createAsyncThunk(
+  "adminLoans/fetchCustomerLoansByBvn",
+  async (bvn, { rejectWithValue }) => {
+    const trimmedBvn = typeof bvn === "string" ? bvn.trim() : "";
+
+    if (!trimmedBvn) {
+      return rejectWithValue("Customer BVN is required");
+    }
+
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/admin/customers/${trimmedBvn}/loans`);
+      return response.data;
+    } catch (error) {
+      return rejectWithValue(extractErrorMessage(error, "Unable to load customer loans"));
+    }
+  }
+);
+
+export const fetchCustomerDetailsByBvn = createAsyncThunk(
+  "adminLoans/fetchCustomerDetailsByBvn",
+  async (bvn, { rejectWithValue }) => {
+    const trimmedBvn = typeof bvn === "string" ? bvn.trim() : "";
+
+    if (!trimmedBvn) {
+      return rejectWithValue("Customer BVN is required");
+    }
+
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/admin/customers/${trimmedBvn}/details`);
+      return response.data;
+    } catch (error) {
+      return rejectWithValue(extractErrorMessage(error, "Unable to load customer details"));
+    }
+  }
+);
+
+export const fetchCsoCustomers = createAsyncThunk(
+  "adminLoans/fetchCsoCustomers",
+  async ({ csoId, search, groupId }, { rejectWithValue }) => {
+    try {
+      const params = {};
+      if (search) params.search = search;
+      if (groupId) params.groupId = groupId;
+      
+      const response = await axios.get(`${API_BASE_URL}/api/loans/cso/${csoId}/customers`, {
+        params,
+      });
+      return response.data;
+    } catch (error) {
+      return rejectWithValue(extractErrorMessage(error, "Unable to load CSO customers"));
+    }
+  }
+);
+
+export const fetchCsoGroupLeaders = createAsyncThunk(
+  "adminLoans/fetchCsoGroupLeaders",
+  async (csoId, { rejectWithValue }) => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/csos/${csoId}/group-leaders`);
+      return response.data;
+    } catch (error) {
+      return rejectWithValue(extractErrorMessage(error, "Unable to load group leaders"));
+    }
+  }
+);
+
+export const assignCustomersToGroup = createAsyncThunk(
+  "adminLoans/assignCustomersToGroup",
+  async ({ loanIds, groupLeaderId }, { rejectWithValue }) => {
+    try {
+      const response = await axios.post(`${API_BASE_URL}/api/loans/assign-group`, {
+        loanIds,
+        groupLeaderId,
+      });
+      return response.data;
+    } catch (error) {
+      return rejectWithValue(extractErrorMessage(error, "Unable to assign customers to group"));
+    }
+  }
+);
+
 const adminLoanSlice = createSlice({
   name: "adminLoans",
   initialState,
@@ -211,6 +302,8 @@ const adminLoanSlice = createSlice({
       state.customerLoansError = null;
       state.overdueLoansError = null;
       state.customerSummaryError = null;
+      state.customerLoanHistoryError = null;
+      state.customerDetailsError = null;
     },
     resetLoanDetail(state) {
       state.detail = null;
@@ -360,6 +453,72 @@ const adminLoanSlice = createSlice({
       .addCase(fetchCustomerSummary.rejected, (state, action) => {
         state.customerSummaryLoading = false;
         state.customerSummaryError = action.payload || "Unable to load customer summary";
+      })
+      .addCase(fetchCustomerLoansByBvn.pending, (state) => {
+        state.customerLoanHistoryLoading = true;
+        state.customerLoanHistoryError = null;
+        state.customerLoanHistory = [];
+        state.customerLoanHistoryCustomer = null;
+      })
+      .addCase(fetchCustomerLoansByBvn.fulfilled, (state, action) => {
+        state.customerLoanHistoryLoading = false;
+        state.customerLoanHistory = action.payload.loans || [];
+        state.customerLoanHistoryCustomer = {
+          bvn: action.payload.bvn,
+          name: action.payload.customerName || "",
+        };
+      })
+      .addCase(fetchCustomerLoansByBvn.rejected, (state, action) => {
+        state.customerLoanHistoryLoading = false;
+        state.customerLoanHistoryError = action.payload || "Unable to load customer loans";
+      })
+      .addCase(fetchCustomerDetailsByBvn.pending, (state) => {
+        state.customerDetailsLoading = true;
+        state.customerDetailsError = null;
+        state.customerDetailsRecord = null;
+      })
+      .addCase(fetchCustomerDetailsByBvn.fulfilled, (state, action) => {
+        state.customerDetailsLoading = false;
+        state.customerDetailsRecord = action.payload || null;
+      })
+      .addCase(fetchCustomerDetailsByBvn.rejected, (state, action) => {
+        state.customerDetailsLoading = false;
+        state.customerDetailsError = action.payload || "Unable to load customer details";
+      })
+      .addCase(fetchCsoCustomers.pending, (state) => {
+        state.csoLoansLoading = true;
+        state.csoLoansError = null;
+      })
+      .addCase(fetchCsoCustomers.fulfilled, (state, action) => {
+        state.csoLoansLoading = false;
+        state.csoLoans = action.payload;
+      })
+      .addCase(fetchCsoCustomers.rejected, (state, action) => {
+        state.csoLoansLoading = false;
+        state.csoLoansError = action.payload || "Unable to load CSO customers";
+      })
+      .addCase(fetchCsoGroupLeaders.pending, (state) => {
+        state.groupLeadersLoading = true;
+        state.groupLeadersError = null;
+      })
+      .addCase(fetchCsoGroupLeaders.fulfilled, (state, action) => {
+        state.groupLeadersLoading = false;
+        state.groupLeaders = action.payload;
+      })
+      .addCase(fetchCsoGroupLeaders.rejected, (state, action) => {
+        state.groupLeadersLoading = false;
+        state.groupLeadersError = action.payload || "Unable to load group leaders";
+      })
+      .addCase(assignCustomersToGroup.pending, (state) => {
+        state.updating = true;
+        state.updateError = null;
+      })
+      .addCase(assignCustomersToGroup.fulfilled, (state) => {
+        state.updating = false;
+      })
+      .addCase(assignCustomersToGroup.rejected, (state, action) => {
+        state.updating = false;
+        state.updateError = action.payload || "Unable to assign customers to group";
       });
   },
 });

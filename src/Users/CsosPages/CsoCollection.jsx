@@ -1,12 +1,45 @@
 import { useEffect, useMemo, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { CalendarIcon, Loader2, RefreshCw, Search, Upload, AlertTriangle, CheckCircle, X } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { CalendarIcon, Loader2, RefreshCw, Search, Upload, AlertTriangle, CheckCircle, X, Wallet, MoreVertical } from "lucide-react";
 import toast from "react-hot-toast";
 import { clearLoanError, fetchCsoCollection, fetchCsoFormCollection } from "../../redux/slices/loanSlice";
 import { fetchCsoProfile, postCsoRemittance, clearCsoError, resetRemittanceSuccess } from "../../redux/slices/csoSlice";
 import { uploadImages, resetUpload } from "../../redux/slices/uploadSlice";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+
+function getRemittanceReferenceDate(baseDate = new Date()) {
+  const reference = new Date(baseDate);
+  const day = reference.getDay(); // 0 = Sunday, 6 = Saturday
+
+  if (day === 1) {
+    // Monday → check previous Friday
+    reference.setDate(reference.getDate() - 3);
+  } else if (day === 0) {
+    // Sunday → check previous Friday
+    reference.setDate(reference.getDate() - 2);
+  } else if (day === 6) {
+    // Saturday → check previous Friday
+    reference.setDate(reference.getDate() - 1);
+  } else {
+    reference.setDate(reference.getDate() - 1);
+  }
+
+  return reference;
+}
+
+function formatRemittanceDateLabel(date) {
+  if (!date) {
+    return "yesterday";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+  }).format(date);
+}
 
 function resolveAssetUrl(url) {
   if (!url) return null;
@@ -142,6 +175,8 @@ export default function CsoCollection() {
     amountCollected: 0,
     amountAlreadyPaid: 0,
   });
+  const [pendingRemittanceDate, setPendingRemittanceDate] = useState(null);
+  const [activeActionMenu, setActiveActionMenu] = useState(null);
 
   const displayDate = collectionDate || selectedDate;
   const totalCollectionValue = (collectionSummary.totalPaidToday || 0) + (formCollectionSummary.totalFormAmount || 0);
@@ -170,8 +205,15 @@ export default function CsoCollection() {
   useEffect(() => {
     dispatch(fetchCsoCollection(selectedDate));
     dispatch(fetchCsoFormCollection(selectedDate));
-    dispatch(fetchCsoProfile());
   }, [dispatch, selectedDate]);
+
+  useEffect(() => {
+    dispatch(fetchCsoProfile());
+  }, [dispatch]);
+
+  useEffect(() => {
+    dispatch(fetchCsoProfile());
+  }, [dispatch]);
 
   useEffect(() => {
     if (collectionError) {
@@ -200,6 +242,7 @@ export default function CsoCollection() {
       setYesterdayRemittanceData(prev => ({ ...prev, amountPaid: "", image: "", remark: "" }));
       
       dispatch(resetRemittanceSuccess());
+      dispatch(fetchCsoProfile());
       
       // We rely on the other useEffects to decide whether to close or keep open.
       // But we should probably explicitly close IF it is now full.
@@ -224,36 +267,9 @@ export default function CsoCollection() {
      }
   }, [todayStatus.status]);
 
-  // Effect to manage Yesterday's Modal closing
-  useEffect(() => {
-      // If yesterday's issue is resolved or fully paid (which we can't easily check without re-running logic),
-      // we rely on checkYesterdayRemittance.
-      // But checkYesterdayRemittance only OPENS it.
-      // We need to know when to CLOSE it.
-      
-      if (csoProfile && csoProfile.remittance) {
-          const today = new Date();
-          const yesterday = new Date(today);
-          yesterday.setDate(yesterday.getDate() - 1);
-          const yesterdayStr = yesterday.toISOString().slice(0, 10);
-          
-          const yesterdayRemittances = csoProfile.remittance.filter(r => {
-                const rDate = new Date(r.date).toISOString().slice(0, 10);
-                return rDate === yesterdayStr;
-            });
-            
-          const amountCollected = Math.max(...yesterdayRemittances.map(r => Number(r.amountCollected) || 0));
-          const totalPaid = yesterdayRemittances.reduce((sum, r) => sum + (Number(r.amountPaid) || 0), 0);
-          
-          if (yesterdayRemittances.length > 0 && totalPaid >= amountCollected) {
-              setShowYesterdayModal(false);
-          }
-      }
-  }, [csoProfile]);
-
   useEffect(() => {
     if (csoProfile) {
-      checkYesterdayRemittance(csoProfile);
+      checkOutstandingRemittance(csoProfile);
     }
   }, [csoProfile]);
 
@@ -269,52 +285,68 @@ export default function CsoCollection() {
     }
   }, [uploadedUrls, uploadTarget, dispatch]);
 
-  const checkYesterdayRemittance = (profile) => {
-    if (!profile || !profile.remittance) return;
-    
-    // Check yesterday's remittance
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    
-    const yesterdayStr = yesterday.toISOString().slice(0, 10);
-    
-    const yesterdayRemittances = profile.remittance.filter(r => {
-        const rDate = new Date(r.date).toISOString().slice(0, 10);
-        return rDate === yesterdayStr;
+  const checkOutstandingRemittance = (profile) => {
+    if (!profile || !profile.remittance) {
+      setShowYesterdayModal(false);
+      setPendingRemittanceDate(null);
+      return;
+    }
+
+    const referenceDate = getRemittanceReferenceDate();
+    const referenceDateStr = referenceDate.toISOString().slice(0, 10);
+
+    const targetRemittances = profile.remittance.filter((record) => {
+      const recordDate = new Date(record.date).toISOString().slice(0, 10);
+      return recordDate === referenceDateStr;
     });
 
     // If no remittance at all, show blocking modal (missing)
-    if (yesterdayRemittances.length === 0) {
-        setYesterdayModalType('missing');
-        setShowYesterdayModal(true);
-        return;
+    if (targetRemittances.length === 0) {
+      setYesterdayModalType("missing");
+      setPendingRemittanceDate(referenceDate);
+      setShowYesterdayModal(true);
+      return;
     }
 
     // Check if resolved
-    const isResolved = yesterdayRemittances.some(r => r.resolvedIssue);
-    if (isResolved) return;
+    const isResolved = targetRemittances.some((record) => record.resolvedIssue);
+    if (isResolved) {
+      setShowYesterdayModal(false);
+      setPendingRemittanceDate(null);
+      return;
+    }
 
     // Calculate totals
-    const amountCollected = Math.max(...yesterdayRemittances.map(r => Number(r.amountCollected) || 0));
-    const totalPaid = yesterdayRemittances.reduce((sum, r) => sum + (Number(r.amountPaid) || 0), 0);
+    const amountCollected = Math.max(
+      ...targetRemittances.map((record) => Number(record.amountCollected) || 0)
+    );
+    const totalPaid = targetRemittances.reduce(
+      (sum, record) => sum + (Number(record.amountPaid) || 0),
+      0
+    );
 
     if (totalPaid < amountCollected) {
-        setYesterdayModalType('partial');
-        setYesterdayRemittanceData(prev => ({
-            ...prev,
-            amountCollected,
-            amountAlreadyPaid: totalPaid,
-            amountPaid: "", // Reset for new input
-            image: "",
-            remark: ""
-        }));
-        setShowYesterdayModal(true);
+      setYesterdayModalType("partial");
+      setPendingRemittanceDate(referenceDate);
+      setYesterdayRemittanceData((prev) => ({
+        ...prev,
+        amountCollected,
+        amountAlreadyPaid: totalPaid,
+        amountPaid: "", // Reset for new input
+        image: "",
+        remark: "",
+      }));
+      setShowYesterdayModal(true);
+    } else {
+      setShowYesterdayModal(false);
+      setPendingRemittanceDate(null);
     }
   };
 
 
 
+
+  const navigate = useNavigate();
 
   const filteredRecords = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
@@ -340,6 +372,32 @@ export default function CsoCollection() {
     dispatch(fetchCsoCollection(selectedDate));
     dispatch(fetchCsoFormCollection(selectedDate));
     dispatch(fetchCsoProfile());
+  };
+
+  const getRecordLoanId = (record) => record?.loanMongoId || record?._id || record?.loanId;
+
+  const handleRecordPayment = (record) => {
+    const loanId = getRecordLoanId(record);
+
+    if (!loanId) {
+      toast.error("Loan identifier unavailable for this record.");
+      return;
+    }
+
+    navigate(`/cso/loans/${loanId}/payment`);
+    setActiveActionMenu(null);
+  };
+
+  const handleViewDetails = (record) => {
+    const loanId = getRecordLoanId(record);
+
+    if (!loanId) {
+      toast.error("Loan identifier unavailable for this record.");
+      return;
+    }
+
+    navigate(`/cso/loans/${loanId}`);
+    setActiveActionMenu(null);
   };
 
 
@@ -387,7 +445,7 @@ export default function CsoCollection() {
         amountCollected: yesterdayRemittanceData.amountCollected,
         amountPaid: amountToPay, // Send only the incremental amount
         image: yesterdayRemittanceData.image, 
-        date: yesterday.toISOString(),
+        date: pendingRemittanceDate ? pendingRemittanceDate.toISOString() : yesterday.toISOString(),
         remark: yesterdayRemittanceData.remark
       };
 
@@ -419,14 +477,14 @@ export default function CsoCollection() {
             {yesterdayModalType === 'missing' ? (
                 <div className="space-y-4">
                     <p className="text-slate-600">
-                        You did not submit remittance for yesterday. Please contact the admin immediately to resolve this issue.
+                        You did not submit remittance for {formatRemittanceDateLabel(pendingRemittanceDate)}. Please contact the admin immediately to resolve this issue.
                     </p>
                     {/* Blocking modal - no close button */}
                 </div>
             ) : (
                 <form onSubmit={handleYesterdayRemittanceSubmit} className="space-y-4">
                     <p className="text-slate-600">
-                        Your remittance for yesterday is incomplete.
+                        Your remittance for {formatRemittanceDateLabel(pendingRemittanceDate)} is incomplete.
                         <br />
                         Collected: <span className="font-semibold">{formatCurrency(yesterdayRemittanceData.amountCollected)}</span>
                         <br />
@@ -681,6 +739,7 @@ export default function CsoCollection() {
                 <th className="px-4 py-3 text-right">Paid to date</th>
                 <th className="px-4 py-3 text-right">Amount due</th>
                 <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -703,8 +762,8 @@ export default function CsoCollection() {
               )}
 
               {!collectionLoading &&
-                filteredRecords.map((record) => (
-                  <tr key={record.loanId} className="text-slate-700">
+                filteredRecords.map((record, index) => (
+                  <tr key={`${record.loanId}-${index}`} className="text-slate-700">
                     <td className="px-4 py-3">
                       <div className="font-semibold text-slate-900">{record.customerName || "Unnamed customer"}</div>
                       <p className="text-xs text-slate-500">{record.loanStatus}</p>
@@ -718,6 +777,37 @@ export default function CsoCollection() {
                       <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${STATUS_BADGES[record.collectionStatus] || "bg-slate-100 text-slate-600"}`}>
                         {record.collectionStatus}
                       </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="relative inline-block">
+                        <button
+                          type="button"
+                          onClick={() => setActiveActionMenu(activeActionMenu === record.loanId ? null : record.loanId)}
+                          className="inline-flex items-center rounded-full border border-slate-200 px-2 py-1 text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </button>
+                        {activeActionMenu === record.loanId && (
+                          <div className="absolute right-0 mt-2 w-40 rounded-2xl border border-slate-200 bg-white p-2 text-sm shadow-lg">
+                            <button
+                              type="button"
+                              onClick={() => handleRecordPayment(record)}
+                              className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-slate-600 hover:bg-slate-50"
+                            >
+                              <Wallet className="h-4 w-4 text-indigo-600" />
+                              Record payment
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleViewDetails(record)}
+                              className="mt-1 flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-slate-600 hover:bg-slate-50"
+                            >
+                              <Search className="h-4 w-4 text-slate-500" />
+                              View details
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

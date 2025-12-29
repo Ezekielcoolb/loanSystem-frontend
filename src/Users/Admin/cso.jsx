@@ -7,6 +7,7 @@ import {
   createCso,
   changeCsoStatus,
   clearCsoError,
+  transferCsoBranch,
 } from "../../redux/slices/csoSlice";
 import { fetchBranches } from "../../redux/slices/branchSlice";
 
@@ -16,6 +17,7 @@ const emptyCsoForm = {
   email: "",
   phone: "",
   branch: "",
+  branchId: "",
   address: "",
   workId: "",
   guaratorName: "",
@@ -35,6 +37,7 @@ const requiredFields = [
   "email",
   "phone",
   "branch",
+  "branchId",
   "address",
   "workId",
   "guaratorName",
@@ -50,6 +53,7 @@ export default function Cso() {
 
   const {
     items: csos,
+    pagination,
     listLoading,
     saving,
     error,
@@ -58,10 +62,24 @@ export default function Cso() {
 
   const [csoForm, setCsoForm] = useState(emptyCsoForm);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [page, setPage] = useState(1);
+  const [branchFilter, setBranchFilter] = useState("");
+  const [transferModal, setTransferModal] = useState({ isOpen: false, cso: null, branchId: "", branchName: "" });
+  const [openMenuId, setOpenMenuId] = useState(null);
 
   useEffect(() => {
-    dispatch(fetchCsos());
-  }, [dispatch]);
+    const handleClickOutside = (event) => {
+      if (!event.target.closest(".action-menu")) {
+        setOpenMenuId(null);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    dispatch(fetchCsos({ page, limit: 20, branchId: branchFilter }));
+  }, [dispatch, page, branchFilter]);
 
   useEffect(() => {
     if (branches.length === 0) {
@@ -87,7 +105,17 @@ export default function Cso() {
 
   const handleInputChange = (event) => {
     const { name, value } = event.target;
-    setCsoForm((prev) => ({ ...prev, [name]: value }));
+    
+    if (name === "branch") {
+      const selectedBranch = branches.find(b => b.name === value);
+      setCsoForm((prev) => ({ 
+        ...prev, 
+        branch: value,
+        branchId: selectedBranch ? selectedBranch._id : ""
+      }));
+    } else {
+      setCsoForm((prev) => ({ ...prev, [name]: value }));
+    }
   };
 
   const handleCreateCso = async (event) => {
@@ -132,6 +160,26 @@ export default function Cso() {
     }
   };
 
+  const handleTransferBranch = async (e) => {
+    e.preventDefault();
+    if (!transferModal.branchId) {
+      toast.error("Please select a new branch");
+      return;
+    }
+
+    try {
+      await dispatch(transferCsoBranch({
+        id: transferModal.cso._id,
+        branch: transferModal.branchName,
+        branchId: transferModal.branchId
+      })).unwrap();
+      toast.success("CSO and loans transferred successfully");
+      setTransferModal({ isOpen: false, cso: null, branchId: "", branchName: "" });
+    } catch (err) {
+      toast.error(typeof err === "string" ? err : "Failed to transfer CSO");
+    }
+  };
+
   const formatDate = (value) => {
     if (!value) return "—";
     try {
@@ -169,6 +217,23 @@ export default function Cso() {
           <div>
             <h2 className="text-lg font-semibold text-slate-900">All CSOs</h2>
             <p className="text-sm text-slate-500">Track the active roster of CSOs and manage their availability.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <label htmlFor="branchFilter" className="text-sm font-medium text-slate-600">Filter by Branch:</label>
+            <select
+              id="branchFilter"
+              value={branchFilter}
+              onChange={(e) => {
+                setBranchFilter(e.target.value);
+                setPage(1);
+              }}
+              className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+            >
+              <option value="">All Branches</option>
+              {branches.map((b) => (
+                <option key={b._id} value={b._id}>{b.name}</option>
+              ))}
+            </select>
           </div>
         </header>
 
@@ -218,29 +283,82 @@ export default function Cso() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-slate-600">{formatDate(cso.createdAt)}</td>
-                    <td className="flex items-center justify-end gap-2 px-4 py-3">
-                      <button
-                        type="button"
-                        className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100"
-                        onClick={() => navigate(`/admin/cso/${cso._id}`)}
-                      >
-                        View Details
-                      </button>
-                      <button
-                        type="button"
-                        className={`rounded-lg px-3 py-1.5 text-xs font-semibold text-white ${
-                          cso.isActive ? "bg-rose-600 hover:bg-rose-700" : "bg-emerald-600 hover:bg-emerald-700"
-                        }`}
-                        onClick={() => handleToggleStatus(cso._id, cso.isActive)}
-                        disabled={saving}
-                      >
-                        {cso.isActive ? "Deactivate" : "Activate"}
-                      </button>
+                    <td className="px-4 py-3 text-right">
+                      <div className="relative action-menu inline-block text-left">
+                        <button
+                          type="button"
+                          className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 focus:outline-none"
+                          onClick={() => setOpenMenuId(openMenuId === cso._id ? null : cso._id)}
+                        >
+                          <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+                          </svg>
+                        </button>
+
+                        {openMenuId === cso._id && (
+                          <div className="absolute right-0 z-20 mt-2 w-48 origin-top-right rounded-lg bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
+                            <div className="py-1">
+                              <button
+                                className="flex w-full items-center px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                                onClick={() => {
+                                  navigate(`/admin/cso/${cso._id}`);
+                                  setOpenMenuId(null);
+                                }}
+                              >
+                                View Details
+                              </button>
+                              <button
+                                className="flex w-full items-center px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                                onClick={() => {
+                                  setTransferModal({ isOpen: true, cso, branchId: "", branchName: "" });
+                                  setOpenMenuId(null);
+                                }}
+                              >
+                                Transfer
+                              </button>
+                              <button
+                                className={`flex w-full items-center px-4 py-2 text-sm font-semibold ${
+                                  cso.isActive ? "text-rose-600 hover:bg-rose-50" : "text-emerald-600 hover:bg-emerald-50"
+                                }`}
+                                onClick={() => {
+                                  handleToggleStatus(cso._id, cso.isActive);
+                                  setOpenMenuId(null);
+                                }}
+                                disabled={saving}
+                              >
+                                {cso.isActive ? "Deactivate" : "Activate"}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {csos.length > 0 && pagination && pagination.totalPages > 1 && (
+          <div className="flex items-center justify-between border-t border-slate-200 px-6 py-4">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1 || listLoading}
+              className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Previous
+            </button>
+            <span className="text-sm text-slate-600">
+              Page {page} of {pagination.totalPages}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(pagination.totalPages, p + 1))}
+              disabled={page === pagination.totalPages || listLoading}
+              className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Next
+            </button>
           </div>
         )}
       </section>
@@ -516,6 +634,64 @@ export default function Cso() {
                   disabled={!isFormValid || saving}
                 >
                   {saving ? "Saving..." : "Create CSO"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {transferModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+          <div className="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-xl">
+            <div className="border-b border-slate-200 px-6 py-4">
+              <h3 className="text-lg font-semibold text-slate-900">Transfer CSO</h3>
+              <p className="text-sm text-slate-500">
+                Move <strong>{transferModal.cso.firstName} {transferModal.cso.lastName}</strong> to a new branch.
+              </p>
+            </div>
+            <form onSubmit={handleTransferBranch} className="p-6 space-y-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">New Branch</label>
+                <select
+                  required
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+                  value={transferModal.branchId}
+                  onChange={(e) => {
+                    const selected = branches.find(b => b._id === e.target.value);
+                    setTransferModal(prev => ({ 
+                      ...prev, 
+                      branchId: e.target.value, 
+                      branchName: selected ? selected.name : "" 
+                    }));
+                  }}
+                >
+                  <option value="" disabled>Select target branch</option>
+                  {branches.filter(b => b._id !== transferModal.cso.branchId).map((branch) => (
+                    <option key={branch._id} value={branch._id}>{branch.name}</option>
+                  ))}
+                </select>
+              </div>
+              
+              <div className="bg-amber-50 rounded-lg p-3 border border-amber-200">
+                <p className="text-xs text-amber-800">
+                  <strong>Note:</strong> All active and fully paid loans under this CSO will be updated to the new branch automatically.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100"
+                  onClick={() => setTransferModal({ isOpen: false, cso: null, branchId: "", branchName: "" })}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+                  disabled={saving}
+                >
+                  {saving ? "Transferring..." : "Confirm Transfer"}
                 </button>
               </div>
             </form>

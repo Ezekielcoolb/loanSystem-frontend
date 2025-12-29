@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { useDispatch, useSelector } from "react-redux";
+import { useNavigate } from "react-router-dom";
 import { fetchCustomerSummary, clearAdminLoanErrors } from "../../../redux/slices/adminLoanSlice";
-import { Loader2, Search, AlertCircle, ChevronLeft, ChevronRight, User } from "lucide-react";
+import { Loader2, Search, MoreVertical, ChevronLeft, ChevronRight, User } from "lucide-react";
 import ReactPaginate from "react-paginate";
 import toast from "react-hot-toast";
 
@@ -25,6 +26,7 @@ const formatDate = (dateString) => {
 
 export default function Customers() {
   const dispatch = useDispatch();
+  const navigate = useNavigate();
   const {
     customerSummary,
     customerSummaryPagination,
@@ -34,6 +36,7 @@ export default function Customers() {
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [openMenuBvn, setOpenMenuBvn] = useState(null);
 
   // Debounce search
   useEffect(() => {
@@ -63,6 +66,35 @@ export default function Customers() {
 
   const handlePageClick = (event) => {
     fetchData(event.selected + 1);
+  };
+
+  const handleViewLoans = (bvn) => {
+    if (!bvn) {
+      toast.error("No BVN on file for this customer");
+      return;
+    }
+    navigate(`/admin/customers/${bvn}/loans`);
+  };
+
+  const handleViewDetails = (bvn) => {
+    if (!bvn) {
+      toast.error("No BVN on file for this customer");
+      return;
+    }
+    navigate(`/admin/customers/${bvn}/details`);
+  };
+
+  useEffect(() => {
+    const handleClickOutside = () => setOpenMenuBvn(null);
+    document.addEventListener("click", handleClickOutside);
+    return () => {
+      document.removeEventListener("click", handleClickOutside);
+    };
+  }, []);
+
+  const toggleMenu = (event, bvn) => {
+    event.stopPropagation();
+    setOpenMenuBvn((prev) => (prev === bvn ? null : bvn));
   };
 
   return (
@@ -112,6 +144,7 @@ export default function Customers() {
                   <th className="px-6 py-3 text-right font-semibold text-slate-900 whitespace-nowrap">Amount / Paid</th>
                   <th className="px-6 py-3 text-right font-semibold text-slate-900 whitespace-nowrap">Balance</th>
                   <th className="px-6 py-3 text-center font-semibold text-slate-900 whitespace-nowrap">Status</th>
+                  <th className="px-6 py-3 text-right font-semibold text-slate-900 whitespace-nowrap">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 bg-white">
@@ -173,6 +206,48 @@ export default function Customers() {
                           'bg-slate-100 text-slate-600'}`}>
                         {customer.status}
                       </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="relative inline-flex">
+                        <button
+                          type="button"
+                          onClick={(event) => toggleMenu(event, customer.bvn)}
+                          disabled={!customer.bvn}
+                          className="inline-flex items-center justify-center rounded-lg border border-slate-200 p-2 text-slate-600 transition hover:border-indigo-200 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </button>
+
+                        {openMenuBvn === customer.bvn && (
+                          <div
+                            className="absolute right-0 top-10 z-20 w-40 rounded-lg border border-slate-200 bg-white shadow-lg"
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleViewLoans(customer.bvn);
+                                setOpenMenuBvn(null);
+                              }}
+                              className="flex w-full items-center justify-between px-4 py-2 text-left text-xs font-medium text-slate-700 transition hover:bg-slate-50"
+                              disabled={!customer.bvn}
+                            >
+                              <span>View all loans</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleViewDetails(customer.bvn);
+                                setOpenMenuBvn(null);
+                              }}
+                              className="flex w-full items-center justify-between px-4 py-2 text-left text-xs font-medium text-slate-700 transition hover:bg-slate-50"
+                              disabled={!customer.bvn}
+                            >
+                              <span>View details</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

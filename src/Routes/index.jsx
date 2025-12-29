@@ -26,6 +26,13 @@ import CsoLoan from "../Users/CsosPages/csoLoan";
 import Frontend from "../GuestPages/Frontend";
 import SocialMedia from "../GuestPages/SocialMedia";
 import Customers from "../Users/Admin/CustomerPages/Customers";
+import CustomerLoanHistory from "../Users/Admin/CustomerPages/CustomerLoanHistory";
+import CustomerDetails from "../Users/Admin/CustomerPages/CustomerDetails";
+import AdminPanel from "../Users/Admin/AdminPanel";
+import Expenses from "../Users/Admin/Operations/Expenses";
+import Holiday from "../Users/Admin/Operations/Holiday";
+import CashAtHand from "../Users/Admin/Operations/CashAtHand";
+import GroupLeader from "../Users/Admin/GroupLeader/GroupLeader";
 
 export default function Routess() {
     return (
@@ -43,12 +50,20 @@ export default function Routess() {
                         { path: "/admin/dashboard", element:<Dashboard /> },
                         { path: "/admin/loans", element:<NewLoan /> },
                         { path: "/admin/customers", element:<Customers /> },
+                        { path: "/admin/customers/:bvn/loans", element:<CustomerLoanHistory /> },
+                        { path: "/admin/customers/:bvn/details", element:<CustomerDetails /> },
                         { path: "/admin/loans/:id", element:<NewLoanDetails /> },
                         { path: "/admin/disbursements", element:<Disbursement /> },
                         { path: "/admin/branch", element:<Branch /> },
                         { path: "/admin/cso", element:<Cso /> },
                         { path: "/admin/cso/:id", element:<CsoDetails /> },
                         { path: "/admin/cso-loans", element:<AllLoans /> },
+                        { path: "/admin/operations/expenses", element:<Expenses /> },
+                         { path: "/admin/groupleaders", element:<GroupLeader /> },
+                        { path: "/admin/operations/holiday", element: <Holiday /> },
+                        { path: "/admin/operations/cash-at-hand", element:<CashAtHand /> },
+                        
+                        { path: "/admin/admins", element:<AdminPanel /> },
                         { path: "/admin/settings", element:<Setting /> },
                        
                     ],

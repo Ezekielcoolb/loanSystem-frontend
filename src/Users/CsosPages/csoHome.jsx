@@ -1,14 +1,47 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import toast from "react-hot-toast";
-import SignatureCanvas from "react-signature-canvas";
-import { Plus, Upload, Loader2, X, AlertCircle, CheckCircle2, Clock, FileText, Sparkles, ListChecks } from "lucide-react";
-import { clearLoanError, fetchCsoLoans, submitLoan } from "../../redux/slices/loanSlice";
+import { submitLoan, clearLoanError, fetchCsoLoans } from "../../redux/slices/loanSlice";
+import { fetchMyApprovedGroupLeaders, createGroupLeader } from "../../redux/slices/groupLeaderSlice";
 import { uploadImages } from "../../redux/slices/uploadSlice";
 import { useNavigate } from "react-router-dom";
+import SignatureCanvas from "react-signature-canvas";
+import toast from "react-hot-toast";
+import { Plus, Upload, Loader2, X, AlertCircle, CheckCircle2, Clock, FileText, Sparkles, ListChecks, Users, UserPlus } from "lucide-react";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 const TOTAL_STEPS = 2;
+
+function getRemittanceReferenceDate(baseDate = new Date()) {
+  const reference = new Date(baseDate);
+  const day = reference.getDay(); // 0 = Sunday, 6 = Saturday
+
+  if (day === 1) {
+    // Monday → check previous Friday
+    reference.setDate(reference.getDate() - 3);
+  } else if (day === 0) {
+    // Sunday → check previous Friday
+    reference.setDate(reference.getDate() - 2);
+  } else if (day === 6) {
+    // Saturday → check previous Friday
+    reference.setDate(reference.getDate() - 1);
+  } else {
+    reference.setDate(reference.getDate() - 1);
+  }
+
+  return reference;
+}
+
+function formatRemittanceDateLabel(date) {
+  if (!date) {
+    return "yesterday";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+  }).format(date);
+}
 
 const STEP_ITEMS = [
   {
@@ -89,6 +122,13 @@ const createInitialFormState = () => ({
     business: "",
     disclosure: "",
     signature: "",
+  },
+  groupDetails: {
+    groupId: "",
+    groupName: "",
+    leaderName: "",
+    address: "",
+    mobileNo: "",
   },
 });
 
@@ -209,10 +249,26 @@ export default function CsoHome() {
   const [currentStep, setCurrentStep] = useState(1);
   const [activeUploadTarget, setActiveUploadTarget] = useState(null);
   const [loanStatusModal, setLoanStatusModal] = useState(null);
-  
+
+  // Floating Action Button State
+  const [showFabMenu, setShowFabMenu] = useState(false);
+  const [showGroupLeaderModal, setShowGroupLeaderModal] = useState(false);
+  const [groupLeaderForm, setGroupLeaderForm] = useState({
+    groupName: "",
+    firstName: "",
+    lastName: "",
+    address: "",
+    phone: "",
+  });
+
+  // Group Leaders State - using Redux
+  const groupLeaders = useSelector((state) => state.groupLeader.items);
+  const loadingGroupLeaders = useSelector((state) => state.groupLeader.loading);
+
   // Blocking Modal State
   const [showBlockingModal, setShowBlockingModal] = useState(false);
   const [blockingModalType, setBlockingModalType] = useState(null); // 'missing' | 'partial'
+  const [pendingRemittanceDate, setPendingRemittanceDate] = useState(null);
 
   const navigate = useNavigate();
 
@@ -221,56 +277,124 @@ export default function CsoHome() {
 
   console.log(loans);
 
+  // Group Leader Handlers using Redux
+  const handleGroupLeaderFormChange = (e) => {
+    const { name, value } = e.target;
+    setGroupLeaderForm(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleGroupLeaderSubmit = async (e) => {
+    e.preventDefault();
+    
+    try {
+      await dispatch(createGroupLeader(groupLeaderForm)).unwrap();
+      toast.success('Group leader created successfully!');
+      setShowGroupLeaderModal(false);
+      setGroupLeaderForm({
+        groupName: "",
+        firstName: "",
+        lastName: "",
+        address: "",
+        phone: "",
+      });
+      // Refresh group leaders list
+      dispatch(fetchMyApprovedGroupLeaders());
+    } catch (error) {
+      toast.error(error || 'Failed to create group leader');
+    }
+  };
+
+  // Handle group leader selection
+  const handleGroupLeaderChange = (selectedGroupId) => {
+    const selectedLeader = groupLeaders.find(gl => gl._id === selectedGroupId);
+    if (selectedLeader) {
+      setForm(prev => ({
+        ...prev,
+        groupDetails: {
+          groupId: selectedLeader._id,
+          groupName: selectedLeader.groupName,
+          leaderName: `${selectedLeader.firstName} ${selectedLeader.lastName}`,
+          address: selectedLeader.address,
+          mobileNo: selectedLeader.phone,
+        }
+      }));
+    }
+  };
+
+  const handleFabClick = () => {
+    setShowFabMenu(!showFabMenu);
+  };
+
+  const handleFabAction = (action) => {
+    setShowFabMenu(false);
+    if (action === 'loan') {
+      setIsModalOpen(true);
+    } else if (action === 'groupLeader') {
+      setShowGroupLeaderModal(true);
+    }
+  };
+
   useEffect(() => {
     if (token) {
       dispatch(fetchCsoLoans());
       dispatch(fetchCsoProfile());
+      dispatch(fetchMyApprovedGroupLeaders());
     }
-  }, [dispatch, token]);
+  }, [token]);
 
   useEffect(() => {
     if (csoProfile) {
-        checkYesterdayRemittance(csoProfile);
+      checkOutstandingRemittance(csoProfile);
     }
   }, [csoProfile]);
 
-  const checkYesterdayRemittance = (profile) => {
-    if (!profile || !profile.remittance) return;
+  const checkOutstandingRemittance = (profile) => {
+    if (!profile || !profile.remittance) {
+      setShowBlockingModal(false);
+      setPendingRemittanceDate(null);
+      return;
+    }
 
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    
-    const yesterdayStr = yesterday.toISOString().slice(0, 10);
-    
-    const yesterdayRemittances = profile.remittance.filter(r => {
-        const rDate = new Date(r.date).toISOString().slice(0, 10);
-        return rDate === yesterdayStr;
+    const referenceDate = getRemittanceReferenceDate();
+    const referenceDateStr = referenceDate.toISOString().slice(0, 10);
+
+    const targetRemittances = profile.remittance.filter((record) => {
+      const recordDate = new Date(record.date).toISOString().slice(0, 10);
+      return recordDate === referenceDateStr;
     });
 
-    // Case 1: No remittance record at all for yesterday
-    if (yesterdayRemittances.length === 0) {
-        setBlockingModalType('missing');
-        setShowBlockingModal(true);
-        return;
+    // Case 1: No remittance record at all for the reference date
+    if (targetRemittances.length === 0) {
+      setBlockingModalType("missing");
+      setPendingRemittanceDate(referenceDate);
+      setShowBlockingModal(true);
+      return;
     }
 
     // Case 2: Remittance exists, check if resolved
-    const isResolved = yesterdayRemittances.some(r => r.resolvedIssue);
+    const isResolved = targetRemittances.some((record) => record.resolvedIssue);
     if (isResolved) {
-        setShowBlockingModal(false);
-        return;
+      setShowBlockingModal(false);
+      setPendingRemittanceDate(null);
+      return;
     }
 
     // Case 3: Check for partial payment
-    const amountCollected = Math.max(...yesterdayRemittances.map(r => Number(r.amountCollected) || 0));
-    const totalPaid = yesterdayRemittances.reduce((sum, r) => sum + (Number(r.amountPaid) || 0), 0);
+    const amountCollected = Math.max(
+      ...targetRemittances.map((record) => Number(record.amountCollected) || 0)
+    );
+    const totalPaid = targetRemittances.reduce(
+      (sum, record) => sum + (Number(record.amountPaid) || 0),
+      0
+    );
 
     if (totalPaid < amountCollected) {
-        setBlockingModalType('partial');
-        setShowBlockingModal(true);
+      setBlockingModalType("partial");
+      setPendingRemittanceDate(referenceDate);
+      setShowBlockingModal(true);
     } else {
-        setShowBlockingModal(false);
+      setShowBlockingModal(false);
+      setPendingRemittanceDate(null);
     }
   };
 
@@ -356,6 +480,13 @@ export default function CsoHome() {
         relationship: form.guarantorDetails.relationship.trim(),
         yearsKnown,
         signature: form.guarantorDetails.signature?.trim() || undefined,
+      },
+      groupDetails: {
+        groupId: form.groupDetails.groupId || undefined,
+        groupName: form.groupDetails.groupName?.trim() || undefined,
+        leaderName: form.groupDetails.leaderName?.trim() || undefined,
+        address: form.groupDetails.address?.trim() || undefined,
+        mobileNo: form.groupDetails.mobileNo?.trim() || undefined,
       },
       pictures: sanitizedPictures,
     };
@@ -632,6 +763,13 @@ export default function CsoHome() {
         yearsKnown,
         signature: form.guarantorDetails.signature?.trim() || undefined,
       },
+      groupDetails: {
+        groupId: form.groupDetails.groupId || undefined,
+        groupName: form.groupDetails.groupName?.trim() || undefined,
+        leaderName: form.groupDetails.leaderName?.trim() || undefined,
+        address: form.groupDetails.address?.trim() || undefined,
+        mobileNo: form.groupDetails.mobileNo?.trim() || undefined,
+      },
       pictures: sanitizedPictures,
     };
 
@@ -799,22 +937,24 @@ export default function CsoHome() {
                 <AlertCircle className="h-8 w-8" />
             </div>
             <h2 className="mb-2 text-2xl font-bold text-slate-900">Action Required</h2>
-            {blockingModalType === 'missing' ? (
-                <p className="text-slate-600">
-                    You did not submit remittance for yesterday. Please contact the admin immediately to resolve this issue.
-                </p>
+            {blockingModalType === "missing" ? (
+              <p className="text-slate-600">
+                You did not submit remittance for {formatRemittanceDateLabel(pendingRemittanceDate)}.
+                Please contact the admin immediately to resolve this issue.
+              </p>
             ) : (
-                <div className="space-y-4">
-                    <p className="text-slate-600">
-                        Your remittance for yesterday is incomplete. Please complete the payment to continue.
-                    </p>
-                    <button
-                        onClick={() => navigate('/cso/collections')}
-                        className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white shadow-sm transition hover:bg-indigo-700"
-                    >
-                        Go to Remittance Page
-                    </button>
-                </div>
+              <div className="space-y-4">
+                <p className="text-slate-600">
+                  Your remittance for {formatRemittanceDateLabel(pendingRemittanceDate)} is incomplete. Please
+                  complete the payment to continue.
+                </p>
+                <button
+                  onClick={() => navigate("/cso/collections")}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 font-semibold text-white shadow-sm transition hover:bg-indigo-700"
+                >
+                  Go to Remittance Page
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -825,14 +965,14 @@ export default function CsoHome() {
           <h1 className="text-2xl font-semibold text-slate-900">Your loan submissions</h1>
           <p className="text-sm text-slate-500">Review your customers and follow up approvals.</p>
         </div>
-        <button
+        {/* <button
           type="button"
           onClick={openModal}
           className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700"
         >
           <Plus className="h-5 w-5" />
           Submit new loan
-        </button>
+        </button> */}
       </section>
 
       <section className="space-y-6">
@@ -964,6 +1104,43 @@ export default function CsoHome() {
                               </label>
                             </div>
                           ))}
+                        </div>
+                      </div>
+
+                      {/* Group Leader Selection */}
+                      <div className="space-y-4">
+                        <div>
+                          <h2 className="text-lg font-semibold text-slate-900">Group Leader</h2>
+                          <p className="text-sm text-slate-500">Select an approved group leader if applicable.</p>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                            Select Group Leader (Optional)
+                            <select
+                              value={form.groupDetails.groupId}
+                              onChange={(e) => handleGroupLeaderChange(e.target.value)}
+                              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                            >
+                              <option value="">Select a group leader...</option>
+                              {loadingGroupLeaders ? (
+                                <option disabled>Loading group leaders...</option>
+                              ) : (
+                                groupLeaders.map((leader) => (
+                                  <option key={leader._id} value={leader._id}>
+                                    {leader.groupName} - {leader.firstName} {leader.lastName}
+                                  </option>
+                                ))
+                              )}
+                            </select>
+                          </label>
+                          {form.groupDetails.groupId && (
+                            <div className="rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
+                              <p><strong>Group:</strong> {form.groupDetails.groupName}</p>
+                              <p><strong>Leader:</strong> {form.groupDetails.leaderName}</p>
+                              <p><strong>Phone:</strong> {form.groupDetails.mobileNo}</p>
+                              <p><strong>Address:</strong> {form.groupDetails.address}</p>
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -1332,6 +1509,146 @@ export default function CsoHome() {
                 </form>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Action Button */}
+      <div className="fixed bottom-6 right-6 z-50">
+        {showFabMenu && (
+          <div className="absolute bottom-16 right-0 space-y-3">
+            <button
+              onClick={() => handleFabAction('loan')}
+              className="flex items-center gap-3 rounded-lg bg-indigo-600 px-4 py-3 shadow-lg border border-slate-200 hover:bg-indigo-700 transition whitespace-nowrap"
+            >
+              <FileText className="h-5 w-5 text-white " />
+              <span className="text-sm font-medium text-white">Submit New Loan</span>
+            </button>
+            <button
+              onClick={() => handleFabAction('groupLeader')}
+              className="flex items-center gap-3 rounded-lg bg-indigo-600 px-4 py-3 shadow-lg border border-slate-200 hover:bg-indigo-700 transition whitespace-nowrap"
+            >
+              <UserPlus className="h-5 w-5 text-white" />
+              <span className="text-sm font-medium text-white">Add Group Leader</span>
+            </button>
+          </div>
+        )}
+        
+        <button
+          onClick={handleFabClick}
+          className={`relative flex h-14 w-14 items-center justify-center rounded-full shadow-lg transition-all ${
+            showFabMenu 
+              ? 'bg-rose-500 hover:bg-rose-600 rotate-45' 
+              : 'bg-indigo-600 hover:bg-indigo-700'
+          }`}
+        >
+          <Plus className="h-6 w-6 text-white" />
+        </button>
+      </div>
+
+      {/* Group Leader Modal */}
+      {showGroupLeaderModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-200 p-6">
+              <div className="flex items-center gap-2 text-slate-800">
+                <Users className="h-5 w-5 text-emerald-600" />
+                <h2 className="text-lg font-semibold">Add Group Leader</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowGroupLeaderModal(false)}
+                className="rounded-lg border border-slate-200 p-2 text-slate-500 transition hover:border-slate-300 hover:text-slate-900"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleGroupLeaderSubmit} className="p-6 space-y-5">
+              <div className="grid gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700">Group Name</label>
+                  <input
+                    type="text"
+                    name="groupName"
+                    value={groupLeaderForm.groupName}
+                    onChange={handleGroupLeaderFormChange}
+                    className="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    placeholder="Enter group name"
+                    required
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700">First Name</label>
+                    <input
+                      type="text"
+                      name="firstName"
+                      value={groupLeaderForm.firstName}
+                      onChange={handleGroupLeaderFormChange}
+                      className="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      placeholder="First name"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-700">Last Name</label>
+                    <input
+                      type="text"
+                      name="lastName"
+                      value={groupLeaderForm.lastName}
+                      onChange={handleGroupLeaderFormChange}
+                      className="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      placeholder="Last name"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700">Address</label>
+                  <textarea
+                    name="address"
+                    value={groupLeaderForm.address}
+                    onChange={handleGroupLeaderFormChange}
+                    rows={3}
+                    className="mt-1 block w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    placeholder="Residential address"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700">Phone Number</label>
+                  <input
+                    type="tel"
+                    name="phone"
+                    value={groupLeaderForm.phone}
+                    onChange={handleGroupLeaderFormChange}
+                    className="mt-1 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    placeholder="0801 234 5678"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowGroupLeaderModal(false)}
+                  className="flex-1 rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700"
+                >
+                  Create Group Leader
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

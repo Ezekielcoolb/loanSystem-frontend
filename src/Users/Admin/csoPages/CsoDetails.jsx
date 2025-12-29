@@ -13,6 +13,7 @@ import {
 import { fetchBranches } from "../../../redux/slices/branchSlice";
 import { ChevronLeft, ChevronRight, CheckCircle, AlertCircle, X, ExternalLink } from "lucide-react";
 import CsoLoansTab from "./CsoLoansTab";
+import CsoCustomersTab from "./CsoCustomersTab";
 
 const editableFields = [
   "firstName",
@@ -20,6 +21,7 @@ const editableFields = [
   "email",
   "phone",
   "branch",
+  "branchId",
   "address",
   "workId",
   "guaratorName",
@@ -108,7 +110,17 @@ export default function CsoDetails() {
 
   const handleInputChange = (event) => {
     const { name, value } = event.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    
+    if (name === "branch") {
+      const selectedBranch = branches.find(b => b.name === value);
+      setFormData((prev) => ({ 
+        ...prev, 
+        branch: value,
+        branchId: selectedBranch ? selectedBranch._id : ""
+      }));
+    } else {
+      setFormData((prev) => ({ ...prev, [name]: value }));
+    }
   };
 
   const handleSubmit = async (event) => {
@@ -340,6 +352,16 @@ export default function CsoDetails() {
                 }`}
             >
                 Loans
+            </button>
+            <button
+                onClick={() => setActiveTab("customers")}
+                className={`border-b-2 py-4 text-sm font-medium ${
+                    activeTab === "customers"
+                        ? "border-indigo-500 text-indigo-600"
+                        : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700"
+                }`}
+            >
+                Customers
             </button>
         </nav>
       </div>
@@ -711,6 +733,8 @@ export default function CsoDetails() {
           </>
       ) : activeTab === "loans" ? (
           <CsoLoansTab csoId={id} />
+      ) : activeTab === "customers" ? (
+          <CsoCustomersTab csoId={id} />
       ) : (
           <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
               <div className="mb-6 flex items-center justify-between">

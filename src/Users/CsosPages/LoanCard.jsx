@@ -148,15 +148,15 @@ export default function LoanCard({ loan }) {
   const outstandingForEntry = selectedEntry ? Math.max(selectedEntry.amountDue, 0) : 0;
 
   return (
-    <section className="rounded-3xl border border-slate-200 bg-slate-900 text-white shadow-lg">
-      <header className="border-b border-slate-800 px-6 py-5">
+    <section className="w-full max-w-full rounded-3xl border border-slate-200 bg-slate-900 text-white shadow-lg">
+      <header className="border-b border-slate-800 px-4 py-5 sm:px-6">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="space-y-4">
             <div>
               <h2 className="text-3xl font-semibold tracking-tight text-white">{customerName}</h2>
               <p className="text-sm text-slate-300">Loan card overview</p>
             </div>
-            <dl className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {summaryItems.map(({ label, value, accent }) => (
                 <div
                   key={label}
@@ -169,7 +169,7 @@ export default function LoanCard({ loan }) {
             </dl>
           </div>
 
-          <div className="flex flex-wrap items-center justify-end gap-3 text-xs sm:text-sm">
+          <div className="flex flex-wrap items-center justify-start gap-3 text-xs sm:justify-end sm:text-sm">
             {LEGEND.map(({ label, color }) => (
               <span
                 key={label}
@@ -183,68 +183,71 @@ export default function LoanCard({ loan }) {
         </div>
       </header>
 
-      <div className="grid grid-cols-5 gap-2 px-3 py-4 sm:px-4 lg:grid-cols-6">
+      <div className="px-2 py-4 sm:px-4">
         {scheduleEntries.length === 0 ? (
-          <div className="col-span-full flex items-center justify-center rounded-2xl border border-dashed border-slate-700 bg-slate-800/40 p-6 text-sm text-slate-300">
+          <div className="flex items-center justify-center rounded-2xl border border-dashed border-slate-700 bg-slate-800/40 p-6 text-sm text-slate-300">
             Repayment schedule unavailable.
           </div>
         ) : (
-          scheduleEntries.map((entry, index) => {
-            const isFirst = index === 0;
-            const isSelected = selectedIndex === index;
-            const cardBase =
-              "flex flex-col items-center justify-between gap-1 rounded-xl border px-1.5 py-2 text-center transition focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-sky-500";
-            const cardColor = isFirst
-              ? isSelected
-                ? "bg-blue-950 border-blue-400"
-                : "bg-blue-900 border-blue-700"
-              : isSelected
-              ? "bg-slate-800 border-slate-600"
-              : "bg-slate-800/40 border-slate-800 hover:bg-slate-800/60";
-            const indicatorClass = isFirst ? "bg-blue-300" : entry.colorClass;
-            const labelClass = isFirst
-              ? "text-[10px] font-semibold uppercase tracking-wide text-blue-100"
-              : "text-[10px] uppercase tracking-wide text-slate-300";
-            const statusClass = isFirst
-              ? "text-[10px] font-semibold uppercase tracking-wide text-blue-100"
-              : "text-[10px] uppercase tracking-wide text-slate-400";
+          <div className="overflow-x-auto">
+            <div className="grid min-w-[420px] grid-cols-4 gap-2 sm:min-w-0 sm:grid-cols-5 lg:grid-cols-6">
+              {scheduleEntries.map((entry, index) => {
+                const isFirst = index === 0;
+                const isSelected = selectedIndex === index;
+                const cardBase =
+                  "flex flex-col items-center justify-between gap-1 rounded-xl border px-1.5 py-2 text-center transition focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-sky-500";
+                const cardColor = isFirst
+                  ? isSelected
+                    ? "bg-blue-950 border-blue-400"
+                    : "bg-blue-900 border-blue-700"
+                  : isSelected
+                  ? "bg-slate-800 border-slate-600"
+                  : "bg-slate-800/40 border-slate-800 hover:bg-slate-800/60";
+                const indicatorClass = isFirst ? "bg-blue-300" : entry.colorClass;
+                const labelClass = isFirst
+                  ? "text-[10px] font-semibold uppercase tracking-wide text-blue-100"
+                  : "text-[10px] uppercase tracking-wide text-slate-300";
+                const statusClass = isFirst
+                  ? "text-[10px] font-semibold uppercase tracking-wide text-blue-100"
+                  : "text-[10px] uppercase tracking-wide text-slate-400";
+                const statusLabel = isFirst ? "Start" : entry.statusLabel;
 
-            const statusLabel = isFirst ? "Start" : entry.statusLabel;
-
-            return (
-              <div
-                key={entry.rawDate?.getTime() ?? `${entry.label}-${index}`}
-                role="button"
-                tabIndex={0}
-                onClick={() => setSelectedIndex(index)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    setSelectedIndex(index);
-                  }
-                }}
-                className={`${cardBase} ${cardColor}`}
-                style={{ minHeight: "66px" }}
-              >
-                <span className={labelClass}>{entry.label}</span>
-                <div className="flex items-center justify-center">
-                  {indicatorClass ? (
-                    <span
-                      className={`h-4 w-4 rounded-full ${indicatorClass} sm:h-5 sm:w-5`}
-                      aria-label={entry.status || (isFirst ? "start" : "")}
-                    />
-                  ) : (
-                    <span className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden="true" />
-                  )}
-                </div>
-                {indicatorClass ? (
-                  <span className={`${statusClass} hidden sm:block`}>{statusLabel}</span>
-                ) : (
-                  <span className="hidden text-[10px] uppercase tracking-wide text-transparent sm:block">—</span>
-                )}
-              </div>
-            );
-          })
+                return (
+                  <div
+                    key={entry.rawDate?.getTime() ?? `${entry.label}-${index}`}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setSelectedIndex(index)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setSelectedIndex(index);
+                      }
+                    }}
+                    className={`${cardBase} ${cardColor}`}
+                    style={{ minHeight: "66px" }}
+                  >
+                    <span className={labelClass}>{entry.label}</span>
+                    <div className="flex items-center justify-center">
+                      {indicatorClass ? (
+                        <span
+                          className={`h-4 w-4 rounded-full ${indicatorClass} sm:h-5 sm:w-5`}
+                          aria-label={entry.status || (isFirst ? "start" : "")}
+                        />
+                      ) : (
+                        <span className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden="true" />
+                      )}
+                    </div>
+                    {indicatorClass ? (
+                      <span className={`${statusClass} hidden sm:block`}>{statusLabel}</span>
+                    ) : (
+                      <span className="hidden text-[10px] uppercase tracking-wide text-transparent sm:block">—</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         )}
       </div>
 
@@ -256,7 +259,7 @@ export default function LoanCard({ loan }) {
           onClick={() => setSelectedIndex(null)}
         >
           <div
-            className="relative w-full max-w-md rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-2xl"
+            className="relative w-full max-w-md rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-2xl max-h-[90vh] overflow-y-auto"
             onClick={(event) => event.stopPropagation()}
           >
             <button
